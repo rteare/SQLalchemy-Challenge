@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, func
 
 from sqlalchemy import Column, Integer, String, Float
 from sqlalchemy.ext.declarative import declarative_base
-base =declarative_base()
+base = declarative_base()
 
 from flask import Flask, jsonify
 
@@ -29,8 +29,8 @@ Base = automap_base()
 Base.prepare(engine, reflect=True)
 
 # Save references to each table
-Measurements = Base.classes.measurement
-Stations = Base.classes.station
+Measurement = Base.classes.measurement
+Station = Base.classes.station
 
 #################################################
 # Flask Setup
@@ -43,15 +43,15 @@ app = Flask(__name__)
 #################################################
 
 @app.route("/")
-def welcome():
+def home():
     """List all available api routes."""
     return (
         f"Available Routes:<br/>"
         f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
         f"/api/v1.0/tobs<br/>"
-        f"/api/v1.0/<start><br/>"
-        f"/api/v1.0/<start>/<end>"
+        f"/api/v1.0/startdate<br/>"
+        f"/api/v1.0/start_end_date<br/>"
     )
 
 @app.route("/api/v1.0/precipitation")
@@ -59,14 +59,18 @@ def prcp():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    # Query prcp data
-    results = session.query(Measurement.date, Measurement.prcp).all()
-    
+    # Calculate the date one year from the last date in data set.
+    query_date = dt.date(2017, 8, 23) - dt.timedelta(days = 365)
+
+    # Perform a query to retrieve the data and precipitation scores
+    results_prcp = session.query(Measurement.date, Measurement.prcp).\
+        filter(Measurement.date >= query_date).order_by(Measurement.date).all()
+
     session.close()
 
     # Create a dictionary from the row data and append to a list of all precip data
     prcp_data = []
-    for date, prcp in results:
+    for date, prcp in results_prcp:
         prcp_dict = {}
         prcp_dict["Date"] = date
         prcp_dict["Precipitation"] = prcp
@@ -79,18 +83,13 @@ def stations():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    # Query all stations data
-    results = session.query(Stations.name, Stations.age, Stations.sex).all()
-
+    # Query list of stations
+    query_station = session.query(Station.station, Station.name).all()
+    
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all station data
-    station_data = []
-    for station, name in results:
-        station_dict = {}
-        station_dict["Station ID #"] = station
-        station_dict["Station Name:"] = name
-        station_data.append(station_dict)
+    # Create a list of stations
+    station_data = list(np.ravel(query_station))
 
     return jsonify(station_data)
 
@@ -99,97 +98,60 @@ def tobs():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    # Query tobs data (query process as .ipynb)
-    recentDate = (session.query(Measurement.date)
-                .order_by(Measurement.date.desc())
-                .first())
-    
-    recentDate = list(np.ravel(recentDate))[0]
-    recentDate = dt.datetime.strptime(recentDate, '%Y-%m-%d')
-    yearbeforeDate = recentDate - dt.timedelta(days=366)
+    # Query most active station and tobs data    
+    query_date = dt.date(2017, 8, 23) - dt.timedelta(days = 365)
 
-    results = (session.query(Measurement.date, Measurement.tobs)
-                .filter(Measurement.date >= yearbeforeDate)
-                .all())
+    active_station = session.query(Measurement.date, (Measurement.tobs)).\
+        filter(Measurement.date >= query_date).\
+        filter(Measurement.station == 'USC00519281').\
+        order_by(Measurement.date).all()
     
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all tobs data
-    tobs_data = []
-    for date, tobs in results:
-        tobs_dict = {}
-        tobs_dict["Date"] = date
-        tobs_dict["Temperature Observation Data"] = tobs
-        tobs_data.append(tobs_dict)
+    # Create a list from the data of all tobs data
+    tobs_data = list(np.ravel(active_station))
 
     return jsonify(tobs_data)
 
-@app.route("/api/v1.0/<start>")
-def starting_date(start):
+@app.route("/api/v1.0/startdate")
+def startdate(start):
     # Create our session (link) from Python to the DB
     session = Session(engine)
+    start = dt.datetime.strptime(start, '%m-%d-%Y')
+       
+    # Query for data from the user defined start date
 
-    # Query tobs data (query process as .ipynb)
-    starting_date = dt.datetime.strptime(start, '%Y-%m-%d')
-    
-    tobs_data = [Measurement.date,
-            func.min(Measurement.tobs),
-            func.max(Measurement.tobs),
-            func.avg(Measurement.tobs)]
-    
-    results = (session.query(*tobs_data)
-            .filter(func.strftime('%Y-%m-%d', Measurement.date) >= starting_date)
-            .all())
-    
-    # Create a dictionary from the row data and append to a list of all tobs data for a given start date.
-    start_dates = []
-    for result in results:
-        start_dict = {}
-        start_dict["Date"] = result[0]
-        start_dict["Low Temperature"] = result[1]
-        start_dict["High Temperature"] = result[2]
-        start_dict["Avg. Temperature"] = result[3]
-        start_dates.append(start_dict)
+    inter=[func.min(Measurement.tobs),func.avg(Measurement.tobs), func.max(Measurement.tobs)]
+    results=session.query(*inter).\
+        filter(Measurement.date>=start).all()
 
-    return jsonify(start_dates)
+    session.close()
 
-@app.route("/api/v1.0/<start>/<end>")
-def starting_ending_date(start, end):
+    # Convert list of tuples into normal list
+    startdate = list(np.ravel(results))
+
+    return jsonify(startdate)
+
+
+@app.route("/api/v1.0/start_end_date")
+def startend(start,end):
     # Create our session (link) from Python to the DB
     session = Session(engine)
+    start = dt.datetime.strptime(start, '%m-%d-%Y')
+    end = dt.datetime.strptime(end, '%m-%d-%Y')   
+    
+    # Query for data from the user defined start and end dates
+    inter=[func.min(Measurement.tobs),func.avg(Measurement.tobs), func.max(Measurement.tobs)]
+    results=session.query(*inter).\
+        filter(Measurement.date>=start).filter(Measurement.date<=end).all()
 
-    # Query tobs data (query process as .ipynb)
-    starting_date = dt.datetime.strptime(start, '%Y-%m-%d').date()
-    ending_date = dt.datetime.strptime(end, '%Y-%m-%d').date()
-    
-    tobs_data = [Measurement.date,
-            func.min(Measurement.tobs),
-            func.max(Measurement.tobs),
-            func.avg(Measurement.tobs)]
-    
-    results = (session.query(*tobs_data)
-            .filter(Measurement.date >= starting_date)
-            .filter(Measurement.date <= ending_date)
-            .all())
-    
-    # Use np.ravel to try to solve error instead of a for loop.
-    # Store the min, max, avg in a variable so it can be placed into the dict.
-    results = list(np.ravel(results))
-    min_tobs = results[1]
-    max_tobs = results[2]
-    avg_tobs = results[3]
+    session.close()
 
-    # Create a dictionary from the row data and append to a list of all tobs data for a given start and end date.
-    start_end_dates = []
-    s_e_dict = [{"Starting Date": starting_date},
-                {"Ending Date": ending_date},
-                {"Low Temperature": min_tobs},
-                {"High Temperature": max_tobs},
-                {"Avg. Temperature": avg_tobs}]
+    # Convert list of tuples into normal list
+    startend = list(np.ravel(results))
     
-    start_end_dates.append(s_e_dict)
-    
-    return jsonify(start_end_dates)
+    return jsonify(startend)
 
 if __name__ == '__main__':
     app.run(debug=True)
+
