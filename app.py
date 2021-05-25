@@ -50,8 +50,8 @@ def home():
         f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
         f"/api/v1.0/tobs<br/>"
-        f"/api/v1.0/startdate<br/>"
-        f"/api/v1.0/start_end_date<br/>"
+        f"/api/v1.0/<start><br/>"
+        f"/api/v1.0/<start>/<end><br/>"
     )
 
 @app.route("/api/v1.0/precipitation")
@@ -62,13 +62,13 @@ def prcp():
     # Calculate the date one year from the last date in data set.
     query_date = dt.date(2017, 8, 23) - dt.timedelta(days = 365)
 
-    # Perform a query to retrieve the data and precipitation scores
+    # Query to retrieve the data and precipitation scores
     results_prcp = session.query(Measurement.date, Measurement.prcp).\
         filter(Measurement.date >= query_date).order_by(Measurement.date).all()
 
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all precip data
+    # Create a dictionary of all precip data
     prcp_data = []
     for date, prcp in results_prcp:
         prcp_dict = {}
@@ -83,7 +83,7 @@ def stations():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    # Query list of stations
+    # Query to retrieve list of stations
     query_station = session.query(Station.station, Station.name).all()
     
     session.close()
@@ -98,7 +98,7 @@ def tobs():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    # Query most active station and tobs data    
+    # Query to retrieve most active station and tobs data    
     query_date = dt.date(2017, 8, 23) - dt.timedelta(days = 365)
 
     active_station = session.query(Measurement.date, (Measurement.tobs)).\
@@ -113,44 +113,53 @@ def tobs():
 
     return jsonify(tobs_data)
 
-@app.route("/api/v1.0/startdate")
-def startdate(start):
+@app.route("/api/v1.0/<start>")
+def start_date(start):
     # Create our session (link) from Python to the DB
     session = Session(engine)
-    start = dt.datetime.strptime(start, '%m-%d-%Y')
-       
+
+    # Define Start set up
+    start_date = dt.datetime.strptime(start, '%m-%d-%Y')
+           
     # Query for data from the user defined start date
-
-    inter=[func.min(Measurement.tobs),func.avg(Measurement.tobs), func.max(Measurement.tobs)]
-    results=session.query(*inter).\
-        filter(Measurement.date>=start).all()
-
+    temp =[func.min(Measurement.tobs), 
+        func.avg(Measurement.tobs), 
+        func.max(Measurement.tobs)]
+    
+    query_temp = session.query(*temp).\
+        filter(Measurement.date >= start_date).all()
+    
     session.close()
 
     # Convert list of tuples into normal list
-    startdate = list(np.ravel(results))
+    start_date_data = list(np.ravel(query_temp))
 
-    return jsonify(startdate)
+    return jsonify(start_date_data)
 
-
-@app.route("/api/v1.0/start_end_date")
-def startend(start,end):
+@app.route("/api/v1.0/<start>/<end>")
+def start_end_date(start,end):
     # Create our session (link) from Python to the DB
     session = Session(engine)
-    start = dt.datetime.strptime(start, '%m-%d-%Y')
-    end = dt.datetime.strptime(end, '%m-%d-%Y')   
-    
-    # Query for data from the user defined start and end dates
-    inter=[func.min(Measurement.tobs),func.avg(Measurement.tobs), func.max(Measurement.tobs)]
-    results=session.query(*inter).\
-        filter(Measurement.date>=start).filter(Measurement.date<=end).all()
 
+    # Define Start & End set up 
+    start_date = dt.datetime.strptime(start, '%m-%d-%Y')
+    end_date = dt.datetime.strptime(end, '%m-%d-%Y')
+           
+    # Query for data from the user defined start date
+    temp =[func.min(Measurement.tobs), 
+        func.avg(Measurement.tobs), 
+        func.max(Measurement.tobs)]
+    
+    query_temp = session.query(*temp).\
+        filter(Measurement.date >= start_date).\
+        filter(Measurement.date <= end_date).all()
+    
     session.close()
 
     # Convert list of tuples into normal list
-    startend = list(np.ravel(results))
-    
-    return jsonify(startend)
+    start_end_data = list(np.ravel(query_temp))
+
+    return jsonify(start_end_data)
 
 if __name__ == '__main__':
     app.run(debug=True)
